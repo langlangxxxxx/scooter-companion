@@ -50,25 +50,25 @@ export function StatusCards({
       icon: Route,
       label: 'Gesamt',
       value: `${totalDistance.toFixed(1)} km`,
-      color: 'text-blue-500',
+      color: 'text-primary',
     },
     {
       icon: Navigation,
       label: 'Fahrt',
       value: `${tripDistance.toFixed(2)} km`,
-      color: 'text-green-500',
+      color: 'text-primary',
     },
     {
       icon: Timer,
       label: 'Fahrzeit',
       value: formatTime(tripTime),
-      color: 'text-purple-500',
+      color: 'text-accent-foreground',
     },
     {
       icon: Thermometer,
       label: 'Controller',
       value: `${controllerTemp.toFixed(0)}°C`,
-      color: controllerTemp > 50 ? 'text-red-500' : 'text-orange-500',
+      color: controllerTemp > 50 ? 'text-destructive' : 'text-primary',
     },
   ];
 
@@ -102,18 +102,18 @@ export function StatusCards({
       >
         <Card className={cn(
           'border',
-          isConnected ? 'border-green-500/30 bg-green-500/5' : 'border-muted'
+          isConnected ? 'border-primary/30 bg-primary/10' : 'border-muted'
         )}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className={cn(
                   'w-10 h-10 rounded-full flex items-center justify-center',
-                  isConnected ? 'bg-green-500/20' : 'bg-muted'
+                  isConnected ? 'bg-primary/20' : 'bg-muted'
                 )}>
                   <Bluetooth className={cn(
                     'w-5 h-5',
-                    isConnected ? 'text-green-500' : 'text-muted-foreground'
+                    isConnected ? 'text-primary' : 'text-muted-foreground'
                   )} />
                 </div>
                 <div>
@@ -136,7 +136,7 @@ export function StatusCards({
                         className={cn(
                           'w-1 rounded-full',
                           bar <= getSignalBars(signalStrength)
-                            ? 'bg-green-500'
+                            ? 'bg-primary'
                             : 'bg-muted',
                           bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : bar === 3 ? 'h-4' : 'h-5'
                         )}

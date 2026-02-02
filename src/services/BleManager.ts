@@ -1,5 +1,5 @@
 // BLE Manager Service für ScooterConnect
-import { BleClient, BleDevice, ScanResult } from '@capacitor-community/bluetooth-le';
+import { BleClient, BleService, ScanResult } from '@capacitor-community/bluetooth-le';
 import { 
   ScooterDevice, 
   ScooterModel, 
@@ -10,10 +10,175 @@ import {
 type ConnectionListener = (state: ConnectionState) => void;
 type DataListener = (data: Uint8Array) => void;
 
+type BleWriteMode = 'withResponse' | 'withoutResponse';
+
+type BleConnectionProfile = {
+  service: string;
+  rx: string;
+  tx: string;
+  writeMode: BleWriteMode;
+};
+
+type BleProfileCandidate = {
+  service: string;
+  rx: string;
+  tx: string;
+  defaultWriteMode: BleWriteMode;
+};
+
+const NUS_PROFILE: BleProfileCandidate = {
+  service: BLE_UUIDS.xiaomi.service,
+  rx: BLE_UUIDS.xiaomi.rx,
+  tx: BLE_UUIDS.xiaomi.tx,
+  defaultWriteMode: 'withoutResponse',
+};
+
+const NINEBOT_PROFILE: BleProfileCandidate = {
+  service: BLE_UUIDS.ninebot.service,
+  rx: BLE_UUIDS.ninebot.read,
+  tx: BLE_UUIDS.ninebot.write,
+  defaultWriteMode: 'withResponse',
+};
+
+const normalizeUuid = (uuid?: string | null): string => (uuid ?? '').toLowerCase();
+
+const matchesUuid = (left?: string | null, right?: string | null): boolean =>
+  normalizeUuid(left) === normalizeUuid(right);
+
+const findService = (services: BleService[], uuid: string): BleService | undefined =>
+  services.find(service => matchesUuid(service.uuid, uuid));
+
+const hasNotify = (properties: BleService['characteristics'][number]['properties']): boolean =>
+  properties.notify || properties.indicate;
+
+const hasWrite = (properties: BleService['characteristics'][number]['properties']): boolean =>
+  properties.write || properties.writeWithoutResponse;
+
+const pickCharacteristic = (
+  service: BleService,
+  preferredUuid: string,
+  predicate: (properties: BleService['characteristics'][number]['properties']) => boolean
+) => {
+  const preferred = service.characteristics.find(
+    characteristic => matchesUuid(characteristic.uuid, preferredUuid) && predicate(characteristic.properties)
+  );
+
+  if (preferred) return preferred;
+
+  return service.characteristics.find(characteristic => predicate(characteristic.properties));
+};
+
+export const detectScooterModel = (
+  name?: string,
+  uuids?: string[]
+): ScooterModel | null => {
+  const normalizedName = name?.toLowerCase() ?? '';
+  const normalizedUuids = (uuids ?? []).map(uuid => uuid.toLowerCase());
+
+  const isNinebotName = ['ninebot', 'g30', 'segway', 'max', 'g2'].some(fragment =>
+    normalizedName.includes(fragment)
+  );
+  const isXiaomiName = ['mi scooter', 'm365', 'xiaomi', '1s'].some(fragment =>
+    normalizedName.includes(fragment)
+  );
+
+  if (isNinebotName) return 'ninebot-g30';
+  if (isXiaomiName) return 'xiaomi-1s';
+
+  if (normalizedUuids.includes(normalizeUuid(BLE_UUIDS.ninebot.service))) {
+    return 'ninebot-g30';
+  }
+
+  if (
+    normalizedUuids.includes(normalizeUuid(BLE_UUIDS.xiaomi.service)) ||
+    normalizedUuids.includes(normalizeUuid(BLE_UUIDS.xiaomi.authService))
+  ) {
+    return 'xiaomi-1s';
+  }
+
+  return null;
+};
+
+export const resolveBleProfile = (
+  device: ScooterDevice,
+  services?: BleService[]
+): BleConnectionProfile => {
+  const candidates: BleProfileCandidate[] =
+    device.model === 'ninebot-g30'
+      ? [NUS_PROFILE, NINEBOT_PROFILE]
+      : [NUS_PROFILE];
+
+  if (!services || services.length === 0) {
+    const fallback = candidates[0];
+    return {
+      service: fallback.service,
+      rx: fallback.rx,
+      tx: fallback.tx,
+      writeMode: fallback.defaultWriteMode,
+    };
+  }
+
+  for (const candidate of candidates) {
+    const service = findService(services, candidate.service);
+    if (!service) continue;
+
+    const rxCharacteristic = pickCharacteristic(service, candidate.rx, hasNotify);
+    const txCharacteristic = pickCharacteristic(service, candidate.tx, hasWrite);
+
+    if (!rxCharacteristic || !txCharacteristic) continue;
+
+    const writeMode: BleWriteMode = txCharacteristic.properties.write
+      ? 'withResponse'
+      : txCharacteristic.properties.writeWithoutResponse
+        ? 'withoutResponse'
+        : candidate.defaultWriteMode;
+
+    return {
+      service: service.uuid,
+      rx: rxCharacteristic.uuid,
+      tx: txCharacteristic.uuid,
+      writeMode,
+    };
+  }
+
+  for (const service of services) {
+    const rxCharacteristic = service.characteristics.find(characteristic =>
+      hasNotify(characteristic.properties)
+    );
+    const txCharacteristic = service.characteristics.find(characteristic =>
+      hasWrite(characteristic.properties)
+    );
+
+    if (!rxCharacteristic || !txCharacteristic) continue;
+
+    const writeMode: BleWriteMode = txCharacteristic.properties.write
+      ? 'withResponse'
+      : txCharacteristic.properties.writeWithoutResponse
+        ? 'withoutResponse'
+        : candidates[0].defaultWriteMode;
+
+    return {
+      service: service.uuid,
+      rx: rxCharacteristic.uuid,
+      tx: txCharacteristic.uuid,
+      writeMode,
+    };
+  }
+
+  const fallback = candidates[0];
+  return {
+    service: fallback.service,
+    rx: fallback.rx,
+    tx: fallback.tx,
+    writeMode: fallback.defaultWriteMode,
+  };
+};
+
 class BleManager {
   private static instance: BleManager;
   private isInitialized = false;
   private connectedDevice: ScooterDevice | null = null;
+  private activeProfile: BleConnectionProfile | null = null;
   private connectionListeners: Set<ConnectionListener> = new Set();
   private dataListeners: Set<DataListener> = new Set();
   private reconnectAttempts = 0;
@@ -60,7 +225,11 @@ class BleManager {
     try {
       await BleClient.requestLEScan(
         {
-          services: [BLE_UUIDS.xiaomi.service, BLE_UUIDS.ninebot.service],
+          services: [
+            BLE_UUIDS.xiaomi.service,
+            BLE_UUIDS.ninebot.service,
+            BLE_UUIDS.xiaomi.authService,
+          ],
         },
         (result: ScanResult) => {
           const device = this.parseDevice(result);
@@ -91,19 +260,7 @@ class BleManager {
   private parseDevice(result: ScanResult): ScooterDevice | null {
     const { device, rssi, uuids } = result;
     
-    let model: ScooterModel | null = null;
-    
-    if (uuids?.includes(BLE_UUIDS.xiaomi.service)) {
-      model = 'xiaomi-1s';
-    } else if (uuids?.includes(BLE_UUIDS.ninebot.service)) {
-      model = 'ninebot-g30';
-    } else if (device.name?.toLowerCase().includes('mi scooter') || 
-               device.name?.toLowerCase().includes('m365')) {
-      model = 'xiaomi-1s';
-    } else if (device.name?.toLowerCase().includes('ninebot') ||
-               device.name?.toLowerCase().includes('g30')) {
-      model = 'ninebot-g30';
-    }
+    const model = detectScooterModel(device.name, uuids);
 
     if (!model) return null;
 
@@ -126,6 +283,8 @@ class BleManager {
         console.log(`[BLE] Verbindung getrennt: ${deviceId}`);
         this.handleDisconnect();
       });
+
+      this.activeProfile = await this.resolveConnectionProfile(device);
 
       // Services entdecken und Notifications aktivieren
       await this.setupNotifications(device);
@@ -150,16 +309,33 @@ class BleManager {
     }
   }
 
+  private async resolveConnectionProfile(device: ScooterDevice): Promise<BleConnectionProfile> {
+    let services: BleService[] | undefined;
+
+    try {
+      await BleClient.discoverServices(device.id);
+    } catch (error) {
+      console.warn('[BLE] Service-Discovery nicht verfügbar:', error);
+    }
+
+    try {
+      services = await BleClient.getServices(device.id);
+    } catch (error) {
+      console.warn('[BLE] Services konnten nicht gelesen werden:', error);
+    }
+
+    return resolveBleProfile(device, services);
+  }
+
   // Notifications einrichten
   private async setupNotifications(device: ScooterDevice): Promise<void> {
-    const uuids = device.model === 'xiaomi-1s' 
-      ? { service: BLE_UUIDS.xiaomi.service, char: BLE_UUIDS.xiaomi.rx }
-      : { service: BLE_UUIDS.ninebot.service, char: BLE_UUIDS.ninebot.read };
+    const profile = this.activeProfile ?? (await this.resolveConnectionProfile(device));
+    this.activeProfile = profile;
 
     await BleClient.startNotifications(
       device.id,
-      uuids.service,
-      uuids.char,
+      profile.service,
+      profile.rx,
       (value) => {
         this.notifyDataListeners(new Uint8Array(value.buffer));
       }
@@ -173,17 +349,26 @@ class BleManager {
       return false;
     }
 
-    const uuids = this.connectedDevice.model === 'xiaomi-1s'
-      ? { service: BLE_UUIDS.xiaomi.service, char: BLE_UUIDS.xiaomi.tx }
-      : { service: BLE_UUIDS.ninebot.service, char: BLE_UUIDS.ninebot.write };
+    if (!this.activeProfile) {
+      this.activeProfile = resolveBleProfile(this.connectedDevice);
+    }
 
     try {
-      await BleClient.write(
-        this.connectedDevice.id,
-        uuids.service,
-        uuids.char,
-        new DataView(data.buffer)
-      );
+      if (this.activeProfile.writeMode === 'withoutResponse') {
+        await BleClient.writeWithoutResponse(
+          this.connectedDevice.id,
+          this.activeProfile.service,
+          this.activeProfile.tx,
+          new DataView(data.buffer)
+        );
+      } else {
+        await BleClient.write(
+          this.connectedDevice.id,
+          this.activeProfile.service,
+          this.activeProfile.tx,
+          new DataView(data.buffer)
+        );
+      }
       return true;
     } catch (error) {
       console.error('[BLE] Schreiben fehlgeschlagen:', error);
@@ -201,6 +386,7 @@ class BleManager {
       }
     }
     this.connectedDevice = null;
+    this.activeProfile = null;
     this.notifyConnectionState({ status: 'disconnected' });
   }
 
@@ -208,6 +394,7 @@ class BleManager {
   private handleDisconnect(): void {
     const device = this.connectedDevice;
     this.connectedDevice = null;
+    this.activeProfile = null;
     
     if (device && this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
