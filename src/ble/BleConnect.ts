@@ -10,13 +10,22 @@ export type ScooterConnection = {
   modelInfo: NinebotModelInfo;
 };
 
+export type ScooterState = {
+  device: Device;
+  serial: string;
+  type: "NINEBOT_COMPATIBLE";
+  model: string;
+  generation: number;
+};
+
 const SERIAL_REGEX = /N\d[A-Z0-9]{6,}/;
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function connectScooter(
   manager: BleManager,
-  device: Device
+  device: Device,
+  onState?: (state: ScooterState) => void
 ): Promise<ScooterConnection> {
   const connected = await manager.connectToDevice(device.id);
   const discovered = await connected.discoverAllServicesAndCharacteristics();
@@ -34,12 +43,22 @@ export async function connectScooter(
 
   const modelInfo = detectNinebotModel(serial);
 
-  return {
+  const connection = {
     device: discovered,
     serial,
     type: "NINEBOT_COMPATIBLE",
     modelInfo,
-  };
+  } satisfies ScooterConnection;
+
+  onState?.({
+    device: discovered,
+    serial,
+    type: connection.type,
+    model: modelInfo.model,
+    generation: modelInfo.generation,
+  });
+
+  return connection;
 }
 
 async function readSerialFe95(device: Device): Promise<string | null> {
