@@ -30,7 +30,7 @@ const NUS_PROFILE: BleProfileCandidate = {
   service: BLE_UUIDS.xiaomi.service,
   rx: BLE_UUIDS.xiaomi.rx,
   tx: BLE_UUIDS.xiaomi.tx,
-  defaultWriteMode: 'withResponse',
+  defaultWriteMode: 'withoutResponse',
 };
 
 const NINEBOT_PROFILE: BleProfileCandidate = {

@@ -46,7 +46,7 @@ describe('detectScooterModel', () => {
 
 describe('resolveBleProfile', () => {
   it('prefers NUS profile when available for Ninebot', () => {
-    const nusService = createService(BLE_UUIDS.xiaomi.service, [
+    const xiaomiService = createService(BLE_UUIDS.xiaomi.service, [
       {
         uuid: BLE_UUIDS.xiaomi.rx,
         properties: createProperties({ notify: true }),
@@ -71,7 +71,7 @@ describe('resolveBleProfile', () => {
       },
     ]);
 
-    const profile = resolveBleProfile(baseDevice, [ninebotService, nusService]);
+    const profile = resolveBleProfile(baseDevice, [ninebotService, xiaomiService]);
 
     expect(profile.service.toLowerCase()).toBe(BLE_UUIDS.xiaomi.service);
     expect(profile.rx.toLowerCase()).toBe(BLE_UUIDS.xiaomi.rx);
