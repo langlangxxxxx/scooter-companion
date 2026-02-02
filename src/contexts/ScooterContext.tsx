@@ -95,6 +95,14 @@ export function ScooterProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = bleManager.onConnectionStateChange((state) => {
       setConnectionState(state);
+
+      if (state.status === 'connected' && state.device) {
+        setConnectedDevice((prev) => ({
+          ...prev,
+          ...state.device,
+          isConnected: true,
+        }));
+      }
       
       if (state.status === 'disconnected') {
         setConnectedDevice(null);
