@@ -73,10 +73,11 @@ export function ScooterProvider({ children }: { children: ReactNode }) {
     const success = await bleManager.connect(device);
     
     if (success) {
-      setConnectedDevice({ ...device, isConnected: true });
+      const activeDevice = bleManager.getConnectedDevice() ?? { ...device, isConnected: true };
+      setConnectedDevice(activeDevice);
       
       // Telemetrie-Polling starten
-      telemetryService.startPolling(device.model, 300);
+      telemetryService.startPolling(activeDevice.model, 300);
     }
     
     return success;
