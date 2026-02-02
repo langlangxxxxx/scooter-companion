@@ -1,5 +1,8 @@
 // Authentifizierungs-Service für Xiaomi und Ninebot
 import { AuthToken, ScooterModel } from '@/types/scooter';
+import { p256 } from '@noble/curves/nist.js';
+import { hkdf } from '@noble/hashes/hkdf.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 
 // Fallback für Web Crypto API
 function getRandomBytes(length: number): Uint8Array {
@@ -128,29 +131,21 @@ export class AuthService {
   // Xiaomi MiBLE Authentifizierung
   // ============================================
 
-  // ECDH Schlüsselpaar generieren (Placeholder - benötigt native Crypto)
+  // ECDH Schlüsselpaar generieren
   generateKeyPair(): { privateKey: Uint8Array; publicKey: Uint8Array } {
-    // Für echte ECDH würde @noble/curves benötigt
-    // Dies ist ein Placeholder für die Demo
-    const privateKey = getRandomBytes(32);
-    const publicKey = getRandomBytes(65);
-    publicKey[0] = 0x04; // Uncompressed point prefix
-    console.warn('[Auth] ECDH-Placeholder verwendet - echte Crypto benötigt native Bibliotheken');
-    return { privateKey, publicKey };
+    const { secretKey, publicKey } = p256.keygen();
+    return { privateKey: secretKey, publicKey };
   }
 
-  // Shared Secret berechnen (Placeholder)
+  // Shared Secret berechnen
   computeSharedSecret(privateKey: Uint8Array, remotePublicKey: Uint8Array): Uint8Array {
-    // Für echte ECDH würde @noble/curves benötigt
-    const combined = new Uint8Array([...privateKey, ...remotePublicKey]);
-    return simpleHash(combined).slice(0, 32);
+    const sharedSecret = p256.getSharedSecret(privateKey, remotePublicKey);
+    return sharedSecret.slice(1);
   }
 
   // Token aus Shared Secret ableiten
   deriveToken(sharedSecret: Uint8Array, info: string = 'mible-login-info'): Uint8Array {
-    const infoBytes = new TextEncoder().encode(info);
-    const combined = new Uint8Array([...sharedSecret, ...infoBytes]);
-    return simpleHash(combined).slice(0, 12);
+    return hkdf(sha256, sharedSecret, undefined, new TextEncoder().encode(info), 12);
   }
 
   // Session-Keys ableiten
@@ -159,22 +154,15 @@ export class AuthService {
     appRandom: Uint8Array, 
     devRandom: Uint8Array
   ): SessionKeys {
-    const combined = new Uint8Array([...token, ...appRandom, ...devRandom]);
-    const hash = simpleHash(combined);
-    
-    return {
-      appKey: hash.slice(0, 16),
-      devKey: hash.slice(16, 32),
-      appIv: this.deriveIV(hash, 'app'),
-      devIv: this.deriveIV(hash, 'dev'),
-    };
-  }
+    const combined = new Uint8Array([...appRandom, ...devRandom]);
+    const keyMaterial = hkdf(sha256, token, combined, undefined, 40);
 
-  // IV ableiten
-  private deriveIV(hash: Uint8Array, prefix: string): Uint8Array {
-    const prefixBytes = new TextEncoder().encode(prefix);
-    const combined = new Uint8Array([...prefixBytes, ...hash]);
-    return simpleHash(combined).slice(0, 4);
+    return {
+      appKey: keyMaterial.slice(0, 16),
+      devKey: keyMaterial.slice(16, 32),
+      appIv: keyMaterial.slice(32, 36),
+      devIv: keyMaterial.slice(36, 40),
+    };
   }
 
   // Zufällige Bytes generieren
