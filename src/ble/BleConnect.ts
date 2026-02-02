@@ -1,14 +1,18 @@
 import { BleManager, Device } from "react-native-ble-plx";
 import { Buffer } from "buffer";
 import { BLE_UUIDS } from "./bleUuids";
+import { detectNinebotModel, NinebotModelInfo } from "./detectNinebotModel";
 
 export type ScooterConnection = {
   device: Device;
   serial: string;
   type: "NINEBOT_COMPATIBLE";
+  modelInfo: NinebotModelInfo;
 };
 
 const SERIAL_REGEX = /N\d[A-Z0-9]{6,}/;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function connectScooter(
   manager: BleManager,
@@ -16,6 +20,8 @@ export async function connectScooter(
 ): Promise<ScooterConnection> {
   const connected = await manager.connectToDevice(device.id);
   const discovered = await connected.discoverAllServicesAndCharacteristics();
+
+  await wait(150);
 
   const serial =
     (await readSerialFe95(discovered)) ||
@@ -26,10 +32,13 @@ export async function connectScooter(
     throw new Error("NO_SERIAL_NUMBER");
   }
 
+  const modelInfo = detectNinebotModel(serial);
+
   return {
     device: discovered,
     serial,
     type: "NINEBOT_COMPATIBLE",
+    modelInfo,
   };
 }
 
