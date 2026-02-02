@@ -23,17 +23,13 @@ export function BatteryWidget({
 }: BatteryWidgetProps) {
   // Farbe basierend auf Akkustand
   const getBatteryColor = (pct: number) => {
-    if (pct > 60) return 'from-green-500 to-green-400';
-    if (pct > 30) return 'from-yellow-500 to-yellow-400';
-    if (pct > 15) return 'from-orange-500 to-orange-400';
-    return 'from-red-500 to-red-400';
+    if (pct > 15) return 'from-primary via-primary/80 to-accent-foreground';
+    return 'from-destructive to-destructive/70';
   };
 
   const getTextColor = (pct: number) => {
-    if (pct > 60) return 'text-green-500';
-    if (pct > 30) return 'text-yellow-500';
-    if (pct > 15) return 'text-orange-500';
-    return 'text-red-500';
+    if (pct > 15) return 'text-primary';
+    return 'text-destructive';
   };
 
   return (
@@ -66,7 +62,7 @@ export function BatteryWidget({
         </div>
 
         {/* Batterie-Balken */}
-        <div className="relative h-8 bg-secondary rounded-lg overflow-hidden mb-4">
+        <div className="relative h-8 bg-secondary/80 rounded-lg overflow-hidden mb-4">
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${percent}%` }}
@@ -81,7 +77,7 @@ export function BatteryWidget({
             {[20, 40, 60, 80].map((threshold) => (
               <div 
                 key={threshold}
-                className="flex-1 border-r border-background/30 last:border-r-0"
+                className="flex-1 border-r border-background/20 last:border-r-0"
               />
             ))}
           </div>
