@@ -32,6 +32,13 @@ export default function Connect() {
   const [connectingDeviceId, setConnectingDeviceId] = useState<string>();
   const [bluetoothEnabled, setBluetoothEnabled] = useState<boolean | null>(null);
 
+  const connectedModelLabel = connectedDevice
+    ? connectedDevice.modelInfo?.model || (connectedDevice.model === 'xiaomi-1s' ? 'Xiaomi 1S' : 'Ninebot G30')
+    : '';
+  const connectedModelGeneration = connectedDevice?.modelInfo?.generation
+    ? `Gen ${connectedDevice.modelInfo.generation}`
+    : '';
+
   // Bluetooth-Status prüfen
   useEffect(() => {
     const checkBluetooth = async () => {
@@ -119,8 +126,12 @@ export default function Connect() {
                     <div>
                       <p className="font-semibold">{connectedDevice.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {connectedDevice.model === 'xiaomi-1s' ? 'Xiaomi 1S' : 'Ninebot G30'}
+                        {connectedModelLabel}
+                        {connectedModelGeneration ? ` · ${connectedModelGeneration}` : ''}
                       </p>
+                      {connectedDevice.serial && (
+                        <p className="text-xs text-muted-foreground">SN: {connectedDevice.serial}</p>
+                      )}
                     </div>
                   </div>
                   <Button variant="outline" onClick={disconnect}>
