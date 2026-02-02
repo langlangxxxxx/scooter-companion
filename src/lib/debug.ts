@@ -21,3 +21,9 @@ export function warnDebug(...args: unknown[]): void {
     console.warn(...args);
   }
 }
+
+export function errorDebug(...args: unknown[]): void {
+  if (isDebugEnabled()) {
+    console.error(...args);
+  }
+}
